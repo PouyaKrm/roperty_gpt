@@ -4,6 +4,10 @@ import json
 
 # Create your models here.
 
+class NormalizedAddress(models.Model):
+    address = models.CharField(max_length=200, db_index=True)
+
+
 
 class Partner(models.Model):
     id = models.BigAutoField(primary_key=True)
@@ -11,9 +15,11 @@ class Partner(models.Model):
     idempotency_key = models.CharField(max_length=200, unique=True)
     normalized = models.BooleanField(default=False)
     received_at = models.DateField(default=timezone.now)
+    address = models.OneToOneField(NormalizedAddress, on_delete=models.PROTECT, related_name='address', related_query_name='address')
 
     class Meta:
         ordering = ["-received_at"]
+
 
 
 class Listing(models.Model):
