@@ -16,6 +16,9 @@ Including another URLconf
 from django.contrib import admin
 from django.urls import path
 
+from partners.views import MyListAPIView
+
 urlpatterns = [
     path('admin/', admin.site.urls),
+    path('properties/', MyListAPIView.as_view())
 ]
