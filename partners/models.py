@@ -15,7 +15,7 @@ class Partner(models.Model):
     idempotency_key = models.CharField(max_length=200, unique=True)
     normalized = models.BooleanField(default=False)
     received_at = models.DateField(default=timezone.now)
-    address = models.OneToOneField(NormalizedAddress, on_delete=models.PROTECT, related_name='address', related_query_name='address')
+    address = models.ForeignKey(NormalizedAddress, on_delete=models.PROTECT, related_name='address', related_query_name='address')
 
     class Meta:
         ordering = ["-received_at"]
@@ -25,7 +25,7 @@ class Partner(models.Model):
 class Listing(models.Model):
     id = models.BigAutoField(primary_key=True)
     dedupe_id = models.CharField(max_length=255, unique=True, db_index=True)
-    address = models.TextField()
+    address = models.ForeignKey(NormalizedAddress, on_delete=models.PROTECT, related_name='address', related_query_name='address')
     lat = models.FloatField()
     lng = models.FloatField()
     price = models.IntegerField()       # In AED

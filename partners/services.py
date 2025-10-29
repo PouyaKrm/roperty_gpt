@@ -10,12 +10,13 @@ def add_new_record(batch_data):
     new_items = [v for v in kv if v[0] not in existing]
     addresses = update_address(new_items)
     partners = []
-    for item in addresses:
+    for item in new_items:
         a = list(filter(lambda a: a.address==item[2], addresses))[0]
         p = Partner(
         idempotency_key=item[0],
-        data = item[1],
-        address = a
+        data=item[1],
+        address=a,
+        received_at=item[2]
         )
         partners.append(p)
     
