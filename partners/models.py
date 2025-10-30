@@ -5,8 +5,10 @@ from django.utils import timezone
 import json
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Dict
+from typing import Dict, List
 import re
+
+from partners.adapters import compute_dedupe_id, to_iso_utc
 
 # Create your models here.
 
@@ -18,10 +20,14 @@ class NormalizedAddress(models.Model):
 class Partner(models.Model):
     id = models.BigAutoField(primary_key=True)
     data = models.JSONField()
+    lat = models.FloatField(null=True)
+    lon = models.FloatField(null=True)
     idempotency_key = models.CharField(max_length=200, unique=True)
     normalized = models.BooleanField(default=False)
     received_at = models.DateField(default=timezone.now)
     address = models.ForeignKey(NormalizedAddress, on_delete=models.PROTECT)
+    dedupe_key = models.CharField(max_length=200, db_index=True)
+    
 
     class Meta:
         ordering = ["-received_at"]
@@ -73,11 +79,25 @@ class PartnerBase(ABC):
     def get_address(self) -> str:
         pass
 
+    @abstractmethod
+    def get_lat(self):
+        pass
+
+    @abstractmethod
+    def get_lon(self):
+        pass
+
+    def get_dedupe_id(self):
+        return compute_dedupe_id(self.get_address(), self.get_lat(), self.get_lon())
+
+
+    @abstractmethod
     def get_ts(self) -> str:
-        ts_str = self.get_ts_str().replace("Z", "+00:00")
-        dt = datetime.fromisoformat(ts_str).astimezone(timezone.utc)
-        return dt.isoformat()
+        pass
     
+    @abstractmethod
+    def to_listing(self) -> Listing:
+        pass
     
 
     def idempotency_key(self) -> str:
@@ -135,7 +155,34 @@ class PartnerAListing(PartnerBase):
         ts_str = self.get_ts_str().replace("Z", "+00:00")
         dt = datetime.fromisoformat(ts_str).astimezone(timezone.utc)
         return dt.isoformat()
+    
+    def get_lat(self):
+        return self.lat
+    
+    def get_lon(self):
+        return self.lon
+    
+    def to_listing(self):
+        event_time = to_iso_utc(self.updated)
 
+        dedupe_id = compute_dedupe_id(self.get_address(), self.lat, self.lon)
+
+        return Listing(
+            dedupe_id=dedupe_id,
+            lat=self.lat,
+            lng=self.lon,
+            price=self.price_aed,
+            beds=self.beds,
+            baths=self.baths,
+            status=self.status.lower(),
+            updated_at=event_time,
+            sources=[f"A:{self.get_external_id()}"],
+            version=1,
+        )
+
+
+    
+   
 @dataclass
 class PartnerBListing(PartnerBase):
     ext_id: str
@@ -163,3 +210,51 @@ class PartnerBListing(PartnerBase):
         dt = datetime.fromisoformat(self.get_ts_str())
         iso = dt.astimezone(timezone.utc).isoformat()
         return iso
+    
+    def get_lat(self):
+        return self.location.get("lat")
+    
+    def get_lon(self):
+        return self.location.get("lon")
+    
+    def to_listing(self):
+        event_time = to_iso_utc(self.get_ts())
+        lat, lng = self.location["lat"], self.location["lon"]
+
+        dedupe_id = compute_dedupe_id(self.addr, lat, lng)
+
+        price_aed = self.price_fils // 100
+
+        state_map = {
+            "active": "for_sale",
+            "inactive": "off_market",
+            "sold": "sold",
+        }
+        status = state_map.get(self.state.lower(), "off_market")
+
+        return Listing(
+            dedupe_id=dedupe_id,
+            lat=lat,
+            lng=lng,
+            price=price_aed,
+            beds=self.br,
+            baths=self.ba,
+            status=status,
+            updated_at=event_time,
+            sources=[f"B:{self.get_external_id()}"],
+            version=1,
+        )
+
+
+
+def to_partner_list_data_class_from_data(data) -> List[PartnerBase]:
+    partners: List[PartnerBase] = []
+    for d in data:
+        if d['partner'] == 'A':
+            partners = partners + [PartnerAListing(**li, partner='A') for li in d['listings']]
+        elif d['partner'] == 'B':
+            partners = partners + [PartnerBListing(**li, partner='B') for li in d['listings']]
+    return partners
+    
+def to_partner_data_class_from_data(data) -> PartnerBase:
+        return PartnerAListing(**data) if data['partner'] == 'A' else PartnerBListing(**data)

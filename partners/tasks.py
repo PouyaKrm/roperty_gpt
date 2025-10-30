@@ -1,13 +1,12 @@
 from celery import shared_task
 
-from partners.adapters import Normalizer
-from partners.models import Partner
+from partners.models import Listing, NormalizedAddress, Partner, to_partner_data_class_from_data
+from django.db import transaction
+
+from partners.services import get_partners, insert_new_listing_from_partner, mark_partner_as_normaized
 
 @shared_task
-def insert_new():
-    partners = Partner.objects.filter(normalized=False)[:10]
-    data = []
-    for p in partners:
-        data.append(p.data)
-    normalizer = Normalizer(data)
+def insert_listing():
+    partners = get_partners()
+    insert_new_listing_from_partner(partners)
     
